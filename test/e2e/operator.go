@@ -5,6 +5,7 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -666,5 +667,27 @@ var _ = Describe("ARO Operator - Guardrails", func() {
 
 		By("waiting for the gatekeeper Audit deployment to be reconciled")
 		Eventually(auditDeploymentExists).WithContext(ctx).Should(Succeed())
+	})
+
+	var _ = Describe("ARO Operator - Cloud Provder Config ConfigMap", func() {
+		It("must have disableOutboundSNAT set to true", func(ctx context.Context) {
+			var cm *corev1.ConfigMap
+			configMapExists := func(g Gomega, ctx context.Context) {
+				var err error
+				cm, err = clients.Kubernetes.CoreV1().ConfigMaps("openshift-config").Get(ctx, "cloud-provider-config", metav1.GetOptions{})
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			By("waiting for the ConfigMap to make sure it exists")
+			Eventually(configMapExists).WithContext(ctx).Should(Succeed())
+
+			By("unmarshalling the config from the ConfigMap data")
+			var jsonMap map[string]string
+			err := json.Unmarshal([]byte(cm.Data["config"]), &jsonMap)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("checking config correctness")
+			Expect(jsonMap["disableOutboundSNAT"]).To(BeTrue())
+		})
 	})
 })
