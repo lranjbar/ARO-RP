@@ -5,12 +5,14 @@ package cloudproviderconfig
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	kazure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -19,7 +21,6 @@ import (
 
 	arov1alpha1 "github.com/Azure/ARO-RP/pkg/operator/apis/aro.openshift.io/v1alpha1"
 	"github.com/Azure/ARO-RP/pkg/operator/controllers/base"
-	"github.com/Azure/ARO-RP/pkg/util/jsonutils"
 )
 
 const (
@@ -88,12 +89,32 @@ func (r *CloudProviderConfigReconciler) updateCloudProviderConfig(ctx context.Co
 		return fmt.Errorf("field config in ConfigMap openshift-config/cloud-provider-config is missing")
 	}
 
-	updateMap := map[string]string{"disableOutboundSNAT": "true"}
-	changed := false
-	cm.Data["config"], changed, err = jsonutils.UpdateJsonString(jsonConfig, updateMap)
+	// Pulling in the struct here https://github.com/kubernetes-sigs/cloud-provider-azure/blob/v1.24.0/pkg/provider/azure.go#L101-L252
+	var azConfig kazure.Config
+
+	err = json.Unmarshal([]byte(jsonConfig), &azConfig)
 	if err != nil {
 		return err
 	}
+
+	changed := false
+	if !*azConfig.DisableOutboundSNAT {
+		*azConfig.DisableOutboundSNAT = true
+		changed = true
+	}
+	jsonStringByte, err := json.Marshal(azConfig)
+	if err != nil {
+		return err
+	}
+
+	cm.Data["config"] = string(jsonStringByte)
+
+	// updateMap := map[string]string{"disableOutboundSNAT": "true"}
+	// changed := false
+	// cm.Data["config"], changed, err = jsonutils.UpdateJsonString(jsonConfig, updateMap)
+	// if err != nil {
+	// 	return err
+	// }
 
 	if changed {
 		r.Log.Info("openshift-config/cloud-provider-config was updated")
